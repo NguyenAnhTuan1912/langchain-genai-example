@@ -1,0 +1,8 @@
+node_modules
+.env
+memory-store.json
+pnpm-lock.yaml
+package-lock.json
+.DS_Store
+.DS_Store
+**/.DS_Store
