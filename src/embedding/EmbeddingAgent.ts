@@ -4,7 +4,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 
 // Import config
-import { AWS_REGION, EMBEDDING_MODEL_ID } from "./config";
+import { AWS_REGION, EMBEDDING_MODEL_ID } from "../config";
 
 export class EmbeddingAgent {
   bedrockRuntime: BedrockRuntimeClient;

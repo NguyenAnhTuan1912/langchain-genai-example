@@ -1,13 +1,13 @@
 import * as readline from "readline";
 
 // Import chatbot
-import { memory, vectorStore } from "./chatbot";
+import { memory, vectorStore } from "./src/chatbot";
 
 // Import functions
-import { chat, showMemory, searchMemories } from "./functions";
+import { chat, showMemory, searchMemories } from "./src/functions";
 
 // Import configs
-import { AWS_REGION, MODEL_ID, EMBEDDING_MODEL_ID } from "./config";
+import { AWS_REGION, MODEL_ID, EMBEDDING_MODEL_ID } from "./src/config";
 
 async function main() {
   const rl = readline.createInterface({

@@ -10,3 +10,17 @@ export const EMBEDDING_MODEL_ID =
 export const MEMORY_FILE_PATH = "./memory-store.json";
 export const TOP_K_MEMORIES = 5;
 export const SIMILARITY_THRESHOLD = 0.3;
+
+// Features
+export const LONG_TERM_MEM_FEATURE = {
+  IS_ENABLE: true
+};
+
+export const RESPONSE_STREAMING_FEATURE = {
+  IS_ENABLE: true
+};
+
+export const TOOL_USE_FEATURE = {
+  IS_ENABLE: true,
+  MAX_TOOL_ITERATIONS: 5
+};

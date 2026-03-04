@@ -1,10 +1,9 @@
 import { config } from "dotenv";
-import { ChatBedrockConverse, BedrockEmbeddings } from "@langchain/aws";
+import { ChatBedrockConverse } from "@langchain/aws";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { RunnableSequence } from "@langchain/core/runnables";
 
 config();
 
@@ -12,27 +11,26 @@ config();
 import {
   MODEL_ID,
   AWS_REGION,
-  EMBEDDING_MODEL_ID,
-  MEMORY_FILE_PATH,
-} from "./config";
 
-import { createChatHistoryMemory } from "./memory";
-import { LocalVectorStore } from "./local-vector-store";
-import { EmbeddingAgent } from "./embedding";
+  // Features
+  TOOL_USE_FEATURE
+} from "../config";
 
-export const llm = new ChatBedrockConverse({
+// Import tools
+import { getToolsInformation } from "../tools";
+
+const llm = new ChatBedrockConverse({
   model: MODEL_ID,
   region: AWS_REGION,
   temperature: 0.7,
   maxTokens: 1024,
   streaming: true,
 });
-export const memory = createChatHistoryMemory("window");
 
 const prompt = ChatPromptTemplate.fromMessages([
   [
     "system",
-    `Bạn là một trợ lý AI thông minh, thân thiện, trả lời bằng tiếng Việt.
+`Bạn là một trợ lý AI thông minh, thân thiện, trả lời bằng tiếng Việt.
 
 ## Long-term Memory
 Dưới đây là những thông tin bạn nhớ từ các cuộc hội thoại trước với user.
@@ -50,16 +48,16 @@ Nếu memory không liên quan đến câu hỏi hiện tại, bỏ qua nó.
   ["human", "{input}"],
 ]);
 
-export const chain = RunnableSequence.from([
-  {
-    input: (i: any) => i.input,
-    chat_history: (i: any) => i.chat_history,
-    long_term_memories: (i: any) => i.long_term_memories,
-  },
-  prompt,
-  llm,
-]);
+let finalLLM: any = llm;
 
-export const embeddings = new EmbeddingAgent();
+// Setup features
+if (TOOL_USE_FEATURE.IS_ENABLE) {
+  const [tools, _] = getToolsInformation();
+  console.log("BIND TOOLS:", tools.length, "tools");
+  finalLLM = llm.bindTools(tools);
+}
 
-export const vectorStore = new LocalVectorStore(MEMORY_FILE_PATH);
+export const defaultLLM = {
+  llm: finalLLM,
+  prompt
+};

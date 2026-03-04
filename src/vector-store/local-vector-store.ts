@@ -1,7 +1,7 @@
 import fs from "fs";
 
 // Import config
-import { TOP_K_MEMORIES, SIMILARITY_THRESHOLD } from "./config";
+import { TOP_K_MEMORIES, SIMILARITY_THRESHOLD } from "../config";
 
 type MemoryEntry = {
   id: string;
