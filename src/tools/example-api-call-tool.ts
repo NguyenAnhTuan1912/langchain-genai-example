@@ -1,28 +1,45 @@
+import axios, { AxiosRequestConfig } from "axios";
+
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
-export const fetchApiTool = tool(
+export const getGoldPriceTool = tool(
   async (input: any) => {
-    const { method, url, body } = input || {};
-    
+    const url = "https://www.vang.today/api/prices";
+    const { date } = input || {};
+
     try {
-      const options: RequestInit = {
-        method: method || "GET",
+      const options: AxiosRequestConfig = {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
-          // Thêm auth header nếu cần:
-          // "Authorization": `Bearer ${process.env.API_TOKEN}`,
         },
       };
 
-      if (body && method !== "GET") {
-        options.body = JSON.stringify(body);
+      if (date != "current") {
+        const d = new Date(date);
+        options.params = {
+          days: new Date().getDay() - d.getDay()
+        };
       }
 
-      const response = await fetch(url, options);
-      const data = await response.json();
+      const response = await axios.get(url, options);
+      let data = response.data;
 
-      // Truncate nếu response quá dài (tránh exceed context window)
+      if (data.history) {
+        let target = data.history.at(-1);
+
+        data = {
+          date: target.date,
+          prices: target.prices
+        }
+      } else {
+        data = {
+          date: data.date,
+          prices: data.prices
+        }
+      }
+
       const text = JSON.stringify(data, null, 2);
       if (text.length > 3000) {
         return text.substring(0, 3000) + "\n... (truncated)";
@@ -35,18 +52,13 @@ export const fetchApiTool = tool(
   {
     name: "fetch_api",
     description:
-      "Gọi một REST API endpoint. Dùng khi cần lấy hoặc gửi dữ liệu " +
-      "tới một API cụ thể mà user yêu cầu.",
+      "Khi người dùng cần biết giá vàng tại một thời điểm nào đó (có thể là hiện tại), thì dùng tool này.",
     schema: z.object({
-      url: z.string().describe("URL đầy đủ của API endpoint"),
-      method: z
-        .enum(["GET", "POST", "PUT", "DELETE"])
-        .default("GET")
-        .describe("HTTP method"),
-      body: z
-        .any()
-        .optional()
-        .describe("Request body (dạng JSON object) cho POST/PUT"),
+      date: z
+        .string()
+        .describe(
+          "Ngày, tháng, năm của thời điểm mà người dùng muốn bao gồm 2 format là current hoặc dd/mm/yyyy",
+        ),
     }),
-  }
+  },
 );
