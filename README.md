@@ -2,6 +2,30 @@
 
 Interactive terminal chatbot sử dụng **AWS Bedrock** làm LLM backend, tích hợp **vector-based long-term memory** để bot có thể nhớ thông tin xuyên suốt các phiên hội thoại.
 
+## Note
+
+Hiện tại đang có 2 tools:
+- Lấy ngày giờ hiện tại.
+- Lấy giá vàng.
+
+## Ví dụ mẫu
+
+1. Hỏi thử về tên của mình (Cái này là test Long Term Memory, Short Term Memory là Chat History).
+
+![bảo ai viết phần giới thiệu về bản thân trong lần đầu](./images/image-1.png)
+
+Sau đó thì cung cấp thêm cho nó một số thông tin mới.
+
+![cung cấp thêm thông tin về bản thân](./images/image-2.png)
+
+Sau đó thì tạo một session mới và hỏi lại giống câu ban đầu.
+
+![bảo ai viết lại, và nó sẽ đưa thêm các thông tin mới](./images/image-3.png)
+
+2. Thử hỏi về giá vàng, đây là step kết hợp giữa việc gọi 2 tools là lấy giờ hạn hiện tại và lấy giá vàng.
+
+![tương tác với gen ai để hỏi giá vàng](./images/image.png)
+
 ## Tổng quan
 
 Project là một terminal chatbot với kiến trúc modular:
