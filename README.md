@@ -7,6 +7,7 @@ Interactive terminal chatbot sử dụng **AWS Bedrock** làm LLM backend, tích
 Hiện tại đang có 2 tools:
 - Lấy ngày giờ hiện tại.
 - Lấy giá vàng.
+- Tính biểu thức (gọi qua MCP Server).
 
 ## Ví dụ mẫu
 
@@ -25,6 +26,10 @@ Sau đó thì tạo một session mới và hỏi lại giống câu ban đầu.
 2. Thử hỏi về giá vàng, đây là step kết hợp giữa việc gọi 2 tools là lấy giờ hạn hiện tại và lấy giá vàng.
 
 ![tương tác với gen ai để hỏi giá vàng](./images/image.png)
+
+3. Thử hỏi về một biểu thức, nó sẽ kết nối tới MCP Server và tính biểu thức đó.
+
+![tính biểu thức với MCP](./images/image-4.png)
 
 ## Tổng quan
 

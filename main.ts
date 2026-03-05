@@ -1,15 +1,14 @@
 import * as readline from "readline";
 
 // Import chatbot
-import { memory, vectorStore } from "./src/chatbot";
-
-// Import functions
-import { chat, showMemory, searchMemories } from "./src/functions";
+import { createChatbot } from "./src/chatbot";
 
 // Import configs
 import { AWS_REGION, MODEL_ID, EMBEDDING_MODEL_ID } from "./src/config";
 
 async function main() {
+  const chatbot = await createChatbot();
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -23,7 +22,7 @@ async function main() {
     "│  Embedding : " + EMBEDDING_MODEL_ID.substring(0, 35).padEnd(35) + "│",
   );
   console.log("│  Region    : " + AWS_REGION.padEnd(35) + "│");
-  console.log("│  Memories  : " + String(vectorStore.size).padEnd(35) + "│");
+  console.log("│  Memories  : " + String(chatbot.ltm.size).padEnd(35) + "│");
   console.log("│                                                 │");
   console.log("│  Commands:                                      │");
   console.log("│    /memory          — xem tất cả memories       │");
@@ -50,20 +49,20 @@ async function main() {
       }
 
       if (trimmed === "/memory") {
-        await showMemory();
+        await chatbot.showMemory();
         askQuestion();
         return;
       }
 
       if (trimmed.startsWith("/search ")) {
         const query = trimmed.slice(8).trim();
-        if (query) await searchMemories(query);
+        if (query) await chatbot.searchMemories(query);
         askQuestion();
         return;
       }
 
       if (trimmed === "/clear") {
-        await memory.clear();
+        await chatbot.stm.clear();
         console.log("🗑️  Memory đã được xóa.\n");
         askQuestion();
         return;
@@ -73,7 +72,7 @@ async function main() {
       try {
         process.stdout.write("🤖 Bot: ");
 
-        await chat(trimmed, (chunk) => {
+        await chatbot.chat(trimmed, (chunk) => {
           process.stdout.write(chunk);
         });
 
