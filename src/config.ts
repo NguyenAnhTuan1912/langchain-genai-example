@@ -24,3 +24,18 @@ export const TOOL_USE_FEATURE = {
   IS_ENABLE: true,
   MAX_TOOL_ITERATIONS: 5
 };
+
+export const MCP_SERVERS = [
+  {
+    name: "mcp-server-example",
+    transport: "http" as const,
+    url: "http://localhost:3001/mcp"
+  },
+
+  // Remote server (http) — connect qua network
+  // {
+  //   name: "company-api",
+  //   transport: "http" as const,
+  //   url: "https://mcp.company.com/mcp",
+  // },
+];

@@ -3,23 +3,14 @@ import fs from "fs";
 // Import config
 import { TOP_K_MEMORIES, SIMILARITY_THRESHOLD } from "../config";
 
-type MemoryEntry = {
-  id: string;
-  text: string;
-  embedding: number[];
-  timestamp: string;
-  metadata?: {
-    userInput: string;
-    aiResponse: string;
-    topic?: string;
-  };
-}
+import { VectorStore, TMemoryEntry } from "./VectorStore";
 
-export class LocalVectorStore {
-  private memories: MemoryEntry[] = [];
+export class LocalVectorStore extends VectorStore {
+  private memories: TMemoryEntry[] = [];
   private filePath: string;
 
   constructor(filePath: string) {
+    super();
     this.filePath = filePath;
     this.load();
   }
@@ -64,9 +55,9 @@ export class LocalVectorStore {
   async add(
     text: string,
     embedding: number[],
-    metadata?: MemoryEntry["metadata"]
+    metadata?: TMemoryEntry["metadata"]
   ): Promise<void> {
-    const entry: MemoryEntry = {
+    const entry: TMemoryEntry = {
       id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       text,
       embedding,
@@ -82,7 +73,7 @@ export class LocalVectorStore {
     queryEmbedding: number[],
     topK: number = TOP_K_MEMORIES,
     threshold: number = SIMILARITY_THRESHOLD
-  ): { entry: MemoryEntry; score: number }[] {
+  ): { entry: TMemoryEntry; score: number }[] {
     const scored = this.memories
       .map((entry) => ({
         entry,
@@ -96,7 +87,7 @@ export class LocalVectorStore {
   }
 
   // Lấy toàn bộ memories (cho debug)
-  getAll(): MemoryEntry[] {
+  getAll(): TMemoryEntry[] {
     return this.memories;
   }
 

@@ -1,11 +1,7 @@
-// Import config
-import { TOP_K_MEMORIES } from "../config";
+import { Chatbot } from "./Chatbot";
 
-// Import chatbot
-import { memory, chain, vectorStore, embeddings } from "../chatbot";
-
-export async function showMemory(): Promise<void> {
-  const memories = vectorStore.getAll();
+Chatbot.prototype.showMemory = async function(): Promise<void> {
+  const memories = this.ltm.getAll();
 
   console.log("\n╔══════════════════════════════════════════════╗");
   console.log("║         LONG-TERM MEMORY STORE               ║");
