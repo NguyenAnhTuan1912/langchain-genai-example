@@ -22,7 +22,7 @@ async function main() {
     "│  Embedding : " + EMBEDDING_MODEL_ID.substring(0, 35).padEnd(35) + "│",
   );
   console.log("│  Region    : " + AWS_REGION.padEnd(35) + "│");
-  console.log("│  Memories  : " + String(chatbot.ltm.size).padEnd(35) + "│");
+  console.log("│  Memories  : Support both Long Term and Short Term │");
   console.log("│                                                 │");
   console.log("│  Commands:                                      │");
   console.log("│    /memory          — xem tất cả memories       │");

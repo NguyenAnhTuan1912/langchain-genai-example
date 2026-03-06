@@ -17,7 +17,7 @@ Chatbot.prototype.getLongMemoryText = async function(userInput: string) {
   }
 
   const queryEmbedding = await this.embeddings.embedQuery(userInput);
-  const relevantMemories = this.ltm.search(queryEmbedding, TOP_K_MEMORIES);
+  const relevantMemories = await this.ltm.search(queryEmbedding, TOP_K_MEMORIES);
 
   if (relevantMemories.length) {
     memoriesText = relevantMemories

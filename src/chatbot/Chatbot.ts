@@ -5,7 +5,7 @@ import { AIMessageChunk } from "@langchain/core/messages";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { ZodObject } from "zod";
 
-import { LocalVectorStore } from "../vector-store";
+import { LongTermMemory } from "../memory"
 import { BedrockEmbeddingAgent } from "../embedding";
 
 export interface Chatbot {
@@ -13,7 +13,7 @@ export interface Chatbot {
   chain: RunnableSequence;
   embeddings: BedrockEmbeddingAgent;
   stm: BufferMemory | BufferWindowMemory;
-  ltm: LocalVectorStore;
+  ltm: LongTermMemory;
   allToolsByName: Map<
     string,
     DynamicStructuredTool<ZodObject<{}, any>, unknown, unknown, string>
@@ -50,7 +50,7 @@ export class Chatbot {
     llm: ChatBedrockConverse;
     chain: RunnableSequence;
     stm: BufferMemory | BufferWindowMemory;
-    ltm: LocalVectorStore;
+    ltm: LongTermMemory;
     embeddings: BedrockEmbeddingAgent;
     allTools?: DynamicStructuredTool<
       ZodObject<{}, any>,

@@ -2,7 +2,7 @@ import { Chatbot } from "./Chatbot";
 
 Chatbot.prototype.searchMemories = async function(query: string): Promise<void> {
   const queryEmbedding = await this.embeddings.embedQuery(query);
-  const results = this.ltm.search(queryEmbedding, 5, 0.3);
+  const results = await this.ltm.search(queryEmbedding, 5, 0.3);
 
   console.log(`\n🔍 Search: "${query}" → ${results.length} results\n`);
 

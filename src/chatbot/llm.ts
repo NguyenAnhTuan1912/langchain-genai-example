@@ -23,8 +23,7 @@ import {
 // Import tools
 import { getToolsInformation } from "../tools";
 
-import { createChatHistoryMemory } from "../stm";
-import { LocalVectorStore } from "../vector-store";
+import { createChatHistoryMemory, LocalLongTermMemory } from "../memory";
 import { BedrockEmbeddingAgent } from "../embedding";
 
 // Config test client
@@ -92,7 +91,7 @@ export async function setupLLM() {
 
   const stm = createChatHistoryMemory("window");
 
-  const ltm = new LocalVectorStore(MEMORY_FILE_PATH);
+  const ltm = new LocalLongTermMemory(MEMORY_FILE_PATH);
 
   return { llm: finalLLM, prompt, stm, chain, embeddings, ltm, allTools };
 }
