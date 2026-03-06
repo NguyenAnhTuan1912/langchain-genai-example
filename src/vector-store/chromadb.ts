@@ -180,7 +180,6 @@ export abstract class PersistentVectorStore extends VectorStore {
 
 // For runtime / in-process stores: FAISS, in-memory, hnswlib…
 // No connection lifecycle, but adds snapshot persistence.
-
 export abstract class LocalVectorStore extends VectorStore {
   /**
    * Persist the current index/store to disk.

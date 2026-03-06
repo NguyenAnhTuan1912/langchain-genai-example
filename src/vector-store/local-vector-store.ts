@@ -1,45 +1,70 @@
 import fs from "fs";
+import crypto from "crypto";
 
-// Import config
 import { TOP_K_MEMORIES, SIMILARITY_THRESHOLD } from "../config";
+import { VectorStore } from "./VectorStore";
 
-import { VectorStore, TMemoryEntry } from "./VectorStore";
+import type {
+  TMemoryEntry,
+  TMemoryMetadata,
+  TAddInput,
+  TDocumentInput,
+  TListOptions,
+  TSearchOptions,
+  TSearchResult,
+  TCollectionStats,
+} from "./VectorStore";
 
-export class LocalVectorStore extends VectorStore {
-  private memories: TMemoryEntry[] = [];
+export class LocalFileVectorStore extends VectorStore {
+  private store = new Map<string, TMemoryEntry>();
   private filePath: string;
 
   constructor(filePath: string) {
     super();
     this.filePath = filePath;
-    this.load();
+    this._loadFromDisk();
   }
 
-  // Load từ disk
-  private load(): void {
+  async saveSnapshot(path: string): Promise<void> {
+    const entries = [...this.store.values()];
+    fs.writeFileSync(path, JSON.stringify(entries, null, 2), "utf-8");
+  }
+
+  async loadSnapshot(path: string): Promise<void> {
+    this.store.clear();
+    const entries: TMemoryEntry[] = JSON.parse(fs.readFileSync(path, "utf-8"));
+    entries.forEach((e) => this.store.set(e.id, e));
+    console.log(`  📂 Loaded ${this.store.size} entries from ${path}`);
+  }
+
+  private _loadFromDisk(): void {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = fs.readFileSync(this.filePath, "utf-8");
-        this.memories = JSON.parse(data);
-        console.log(`  📂 Loaded ${this.memories.length} memories from disk`);
+        const entries: TMemoryEntry[] = JSON.parse(
+          fs.readFileSync(this.filePath, "utf-8"),
+        );
+        entries.forEach((e) => this.store.set(e.id, e));
+        console.log(`  📂 Loaded ${this.store.size} memories from disk`);
       }
-    } catch (err) {
+    } catch {
       console.log("  ⚠️  Could not load memory file, starting fresh");
-      this.memories = [];
+      this.store.clear();
     }
   }
 
-  // Persist to disk
-  private save(): void {
+  private _saveToDisk(): void {
     fs.writeFileSync(
       this.filePath,
-      JSON.stringify(this.memories, null, 2),
-      "utf-8"
+      JSON.stringify([...this.store.values()], null, 2),
+      "utf-8",
     );
   }
 
-  // Cosine similarity
-  private cosineSimilarity(a: number[], b: number[]): number {
+  private _generateId(): string {
+    return `mem_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`;
+  }
+
+  private _cosineSimilarity(a: number[], b: number[]): number {
     let dot = 0,
       normA = 0,
       normB = 0;
@@ -48,56 +73,131 @@ export class LocalVectorStore extends VectorStore {
       normA += a[i] * a[i];
       normB += b[i] * b[i];
     }
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
   }
 
-  // Thêm memory mới
-  async add(
-    text: string,
-    embedding: number[],
-    metadata?: TMemoryEntry["metadata"]
-  ): Promise<void> {
-    const entry: TMemoryEntry = {
-      id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      text,
-      embedding,
-      timestamp: new Date().toISOString(),
-      metadata,
-    };
-    this.memories.push(entry);
-    this.save();
+  /** Apply a flat metadata filter (AND semantics). */
+  private _matchesFilter(
+    entry: TMemoryEntry,
+    filter?: Record<string, any>,
+  ): boolean {
+    if (!filter) return true;
+    return Object.entries(filter).every(([k, v]) => entry.metadata?.[k] === v);
   }
 
-  // Search by similarity
-  search(
+  async add(input: TAddInput): Promise<string> {
+    const entry = this.buildEntry(
+      this._generateId(),
+      input.text,
+      input.embedding,
+      input.metadata,
+    );
+    this.store.set(entry.id, entry);
+    this._saveToDisk();
+    return entry.id;
+  }
+
+  async addDocument(input: TDocumentInput): Promise<string> {
+    if (!input.embedding) {
+      throw new Error(
+        "LocalFileVectorStore.addDocument: embedding is required (no built-in embedder).",
+      );
+    }
+    return this.add({
+      text: input.pageContent,
+      embedding: input.embedding,
+      metadata: input.metadata,
+    });
+  }
+
+  async addDocuments(inputs: TDocumentInput[]): Promise<string[]> {
+    const ids = await Promise.all(inputs.map((d) => this.addDocument(d)));
+    // addDocument() calls _saveToDisk() each time — do one final consolidated save
+    this._saveToDisk();
+    return ids;
+  }
+
+  async upsert(id: string, input: TAddInput): Promise<void> {
+    const existing = this.store.get(id);
+    const entry = this.buildEntry(
+      id,
+      input.text,
+      input.embedding,
+      input.metadata,
+      existing?.timestamp, // preserve original timestamp if updating
+    );
+    this.store.set(id, entry);
+    this._saveToDisk();
+  }
+
+  async getById(id: string): Promise<TMemoryEntry | null> {
+    return this.store.get(id) ?? null;
+  }
+
+  async list(options?: TListOptions): Promise<TMemoryEntry[]> {
+    const { limit, offset = 0, filter } = options ?? {};
+
+    let entries = [...this.store.values()].filter((e) =>
+      this._matchesFilter(e, filter),
+    );
+
+    if (offset) entries = entries.slice(offset);
+    if (limit) entries = entries.slice(0, limit);
+
+    return entries;
+  }
+
+  async search(
     queryEmbedding: number[],
-    topK: number = TOP_K_MEMORIES,
-    threshold: number = SIMILARITY_THRESHOLD
-  ): { entry: TMemoryEntry; score: number }[] {
-    const scored = this.memories
+    options?: TSearchOptions,
+  ): Promise<TSearchResult[]> {
+    const {
+      topK = TOP_K_MEMORIES,
+      threshold = SIMILARITY_THRESHOLD,
+      filter,
+      includeEmbeddings = false,
+    } = options ?? {};
+
+    return [...this.store.values()]
+      .filter((e) => this._matchesFilter(e, filter))
       .map((entry) => ({
-        entry,
-        score: this.cosineSimilarity(queryEmbedding, entry.embedding),
+        entry: includeEmbeddings ? entry : { ...entry, embedding: [] },
+        score: this._cosineSimilarity(queryEmbedding, entry.embedding),
       }))
-      .filter((item) => item.score >= threshold)
+      .filter((r) => r.score >= threshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
-
-    return scored;
   }
 
-  // Lấy toàn bộ memories (cho debug)
-  getAll(): TMemoryEntry[] {
-    return this.memories;
+  async deleteByIds(ids: string[]): Promise<void> {
+    ids.forEach((id) => this.store.delete(id));
+    this._saveToDisk();
   }
 
-  // Xóa toàn bộ
-  clear(): void {
-    this.memories = [];
-    this.save();
+  async deleteByFilter(filter: Record<string, any>): Promise<void> {
+    for (const [id, entry] of this.store.entries()) {
+      if (this._matchesFilter(entry, filter)) this.store.delete(id);
+    }
+    this._saveToDisk();
   }
 
-  get size(): number {
-    return this.memories.length;
+  async count(): Promise<number> {
+    return this.store.size;
+  }
+
+  async getStats(): Promise<TCollectionStats> {
+    const first = this.store.values().next().value as TMemoryEntry | undefined;
+    return {
+      documentCount: this.store.size,
+      dimensions: first?.embedding.length,
+      distanceMetric: "cosine",
+      filePath: this.filePath,
+    };
+  }
+
+  async reset(): Promise<void> {
+    this.store.clear();
+    this._saveToDisk();
   }
 }
