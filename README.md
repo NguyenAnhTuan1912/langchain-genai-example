@@ -1,6 +1,20 @@
-# 🧠 LangChain Bedrock Chatbot with Long-term Memory
+# 🧠 LangChain Bedrock GenAI Application
 
-Trong repo này thì mình sẽ thực hiện việc thực hành làm GenAI Application với Langchain và AWS Bedrock.
+Trong repo này thì mình sẽ thực hiện việc thực hành làm GenAI Application với Langchain và AWS Bedrock. Hiện tại thì trong dự án này sẽ có một số thứ như sau:
+
+- Short-term memory.
+- Long-term memory.
+- Tools / Skills.
+- MCP.
+
+Trong tương lai thì mình sẽ:
+
+- Nâng cấp Long-term memory.
+- Nâng cấp MCP Server.
+- Thêm phần Workflow.
+- More skills like: research, web search, browser interaction, ...
+
+Mình sẽ không tập chung vào AI Agent trong dự án này để tập chung nhiều hơn vào việc 1 con LLM có thể làm được những gì (làm được bao nhiêu việc).
 
 ## Demo (image)
 
