@@ -1,8 +1,4 @@
-export type TMemoryMetadata = Record<string, any> & {
-  userInput: string;
-  aiResponse: string;
-  topic?: string;
-};
+export type TMemoryMetadata = Record<string, any>;
 
 export type TMemoryEntry = {
   id: string;

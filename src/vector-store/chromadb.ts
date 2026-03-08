@@ -1,195 +1,303 @@
-export type TMemoryMetadata = Record<string, any> & {
-  userInput: string;
-  aiResponse: string;
-  topic?: string;
-};
+import { ChromaClient, Collection, IncludeEnum } from "chromadb";
+import {
+  PersistentVectorStore,
+  TAddInput,
+  TCollectionStats,
+  TDocumentInput,
+  TListOptions,
+  TMemoryEntry,
+  TMemoryMetadata,
+  TSearchOptions,
+  TSearchResult,
+} from "./VectorStore";
 
-export type TMemoryEntry = {
-  id: string;
-  text: string;
-  embedding: number[];
-  timestamp: string;
-  metadata?: TMemoryMetadata;
-};
-
-export type TAddInput = {
-  text: string;
-  embedding: number[];
-  metadata?: TMemoryMetadata;
-};
-
-export type TDocumentInput = {
-  pageContent: string;
-  metadata?: TMemoryMetadata;
-  /** Pre-computed embedding. Required if the store has no built-in embedder. */
-  embedding?: number[];
-};
-
-export type TListOptions = {
-  limit?: number;
-  offset?: number;
-  filter?: Record<string, any>;
-};
-
-export type TSearchOptions = {
-  topK?: number;
-  /** Minimum similarity score [0, 1] to include in results (default: 0). */
-  threshold?: number;
-  /** Provider-specific metadata filter (e.g. { topic: "finance" }). */
-  filter?: Record<string, any>;
-  /** Whether to include the raw embedding vector in results (default: false). */
-  includeEmbeddings?: boolean;
-};
-
-export type TSearchResult = {
-  entry: TMemoryEntry;
-  /** Normalised similarity score in [0, 1]. Higher = more similar. */
-  score: number;
-};
-
-export type TCollectionStats = {
-  documentCount: number;
-  /** Vector dimensions, if the provider exposes it. */
-  dimensions?: number;
-  /** e.g. "cosine" | "l2" | "ip" */
-  distanceMetric?: string;
-  /** Any extra provider-specific info. */
-  [key: string]: any;
-};
-
-// Every provider must implement these, regardless of local or remote.
-
-export abstract class VectorStore {
-  /** Add a single entry with a pre-computed embedding. Returns generated ID. */
-  abstract add(input: TAddInput): Promise<string>;
-
-  /** Add a single document. Returns generated ID. */
-  abstract addDocument(input: TDocumentInput): Promise<string>;
-
+export type TChromaVectorStoreOptions = {
+  /** Chroma server URL. Default: http://localhost:8000 */
+  url?: string;
+  /** Collection name to use / create. */
+  collectionName: string;
   /**
-   * Bulk-add documents. Should be atomic where the provider supports it.
-   * Returns generated IDs in the same order as input.
+   * Distance metric for the collection.
+   * "cosine" (default) | "l2" | "ip"
    */
-  abstract addDocuments(inputs: TDocumentInput[]): Promise<string[]>;
+  distanceMetric?: "cosine" | "l2" | "ip";
+};
 
-  /** Insert or overwrite an entry by ID. */
-  abstract upsert(id: string, input: TAddInput): Promise<void>;
+/**
+ * Maps Chroma's raw distance to a normalised similarity score in [0, 1].
+ *
+ * Chroma returns *distance* (lower = more similar), so we invert it:
+ *   cosine / ip  → distance ∈ [0, 2]  → score = 1 - distance / 2
+ *   l2           → distance ∈ [0, ∞)  → score = 1 / (1 + distance)
+ */
+function distanceToScore(distance: number, metric: string): number {
+  if (metric === "l2") {
+    return 1 / (1 + distance);
+  }
+  // cosine or ip: distance in [0, 2]
+  return Math.max(0, 1 - distance / 2);
+}
 
-  /** Fetch a single entry by ID. Returns null if not found. */
-  abstract getById(id: string): Promise<TMemoryEntry | null>;
+export class ChromaVectorStore extends PersistentVectorStore {
+  private client: ChromaClient;
+  private collection: Collection | null = null;
+  private initialized = false;
 
-  /** List stored entries with optional pagination and metadata filter. */
-  abstract list(options?: TListOptions): Promise<TMemoryEntry[]>;
+  private readonly url: string;
+  private readonly collectionName: string;
+  private readonly distanceMetric: "cosine" | "l2" | "ip";
 
-  /**
-   * Dense vector similarity search.
-   * Returns results sorted by score descending, filtered by threshold.
-   */
-  abstract search(
-    queryEmbedding: number[],
-    options?: TSearchOptions,
-  ): Promise<TSearchResult[]>;
+  constructor(options: TChromaVectorStoreOptions) {
+    super();
+    this.url = options.url ?? "http://localhost:8000";
+    this.collectionName = options.collectionName;
+    this.distanceMetric = options.distanceMetric ?? "cosine";
 
-  /** Delete entries by their IDs. */
-  abstract deleteByIds(ids: string[]): Promise<void>;
+    this.client = new ChromaClient({ path: this.url });
+  }
 
-  /** Delete all entries matching a metadata filter. */
-  abstract deleteByFilter(filter: Record<string, any>): Promise<void>;
+  async initialize(): Promise<void> {
+    this.collection = await this.client.getOrCreateCollection({
+      name: this.collectionName,
+      metadata: { "hnsw:space": this.distanceMetric },
+    });
+    this.initialized = true;
+  }
 
-  /** Total number of documents stored. */
-  abstract count(): Promise<number>;
+  async disconnect(): Promise<void> {
+    // chromadb JS client is stateless HTTP — nothing to close.
+    this.collection = null;
+    this.initialized = false;
+  }
 
-  /** Provider-specific collection stats (count, dimensions, metric…). */
-  abstract getStats(): Promise<TCollectionStats>;
-
-  /** Wipe all data and recreate the collection from scratch. */
-  abstract reset(): Promise<void>;
-
-  /** Verify the store is reachable and operational. */
-  async ping(): Promise<{ ok: boolean; error?: string }> {
-    try {
-      await this.count();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
-    }
+  private get col(): Collection {
+    this.ensureInitialized(this.initialized, "ChromaVectorStore");
+    return this.collection!;
   }
 
   /**
-   * Guard: throw if `initialize()` hasn't been called.
-   * Call this at the top of each method for explicit lifecycle enforcement.
+   * Chroma stores metadata as a flat Record<string, string | number | boolean>.
+   * We JSON-stringify nested objects so TMemoryMetadata round-trips correctly.
    */
-  protected ensureInitialized(initialized: boolean, storeName: string): void {
-    if (!initialized) {
-      throw new Error(
-        `${storeName} is not initialized. Call initialize() first.`,
-      );
-    }
-  }
-
-  /**
-   * Assemble a TMemoryEntry from raw parts.
-   * Saves subclasses from repeating the same construction logic.
-   */
-  protected buildEntry(
-    id: string,
-    text: string,
-    embedding: number[],
+  private serializeMetadata(
     metadata?: TMemoryMetadata,
     timestamp?: string,
-  ): TMemoryEntry {
+  ): Record<string, string | number | boolean> {
+    const flat: Record<string, string | number | boolean> = {
+      __timestamp: timestamp ?? new Date().toISOString(),
+    };
+    if (!metadata) return flat;
+
+    for (const [k, v] of Object.entries(metadata)) {
+      flat[k] =
+        typeof v === "object" && v !== null ? JSON.stringify(v) : (v as string | number | boolean);
+    }
+    return flat;
+  }
+
+  private deserializeMetadata(
+    raw: Record<string, string | number | boolean> | null,
+  ): { metadata: TMemoryMetadata; timestamp: string } {
+    if (!raw) return { metadata: {} as TMemoryMetadata, timestamp: new Date().toISOString() };
+
+    const { __timestamp, ...rest } = raw;
+    const metadata: Record<string, any> = {};
+
+    for (const [k, v] of Object.entries(rest)) {
+      if (typeof v === "string") {
+        try {
+          metadata[k] = JSON.parse(v);
+        } catch {
+          metadata[k] = v;
+        }
+      } else {
+        metadata[k] = v;
+      }
+    }
+
     return {
-      id,
-      text,
-      embedding,
-      timestamp: timestamp ?? new Date().toISOString(),
-      metadata,
+      metadata: metadata as TMemoryMetadata,
+      timestamp: String(__timestamp ?? new Date().toISOString()),
     };
   }
-}
 
-// For remote / server-backed stores: Chroma, Qdrant, Pinecone, OpenSearch…
-// Adds connection lifecycle and optional hybrid search.
-
-export abstract class PersistentVectorStore extends VectorStore {
-  /**
-   * Connect to the backend and ensure the collection exists.
-   * Should be idempotent (safe to call multiple times).
-   */
-  abstract initialize(): Promise<void>;
-
-  /** Gracefully close connections and release resources. */
-  abstract disconnect(): Promise<void>;
-
-  /**
-   * Hybrid search combining dense vectors + keyword/sparse (BM25, etc.).
-   *
-   * Default implementation falls back to pure vector search so that subclasses
-   * only need to override this when the provider actually supports it.
-   *
-   * @param alpha  1.0 = pure dense, 0.0 = pure sparse (default: 0.75)
-   */
-  async hybridSearch(
-    _query: string,
-    queryEmbedding: number[],
-    options?: TSearchOptions & { alpha?: number },
-  ): Promise<TSearchResult[]> {
-    return this.search(queryEmbedding, options);
+  async add(input: TAddInput): Promise<string> {
+    const id = crypto.randomUUID();
+    await this.col.add({
+      ids: [id],
+      embeddings: [input.embedding],
+      documents: [input.text],
+      metadatas: [this.serializeMetadata(input.metadata)],
+    });
+    return id;
   }
-}
 
-// For runtime / in-process stores: FAISS, in-memory, hnswlib…
-// No connection lifecycle, but adds snapshot persistence.
-export abstract class LocalVectorStore extends VectorStore {
-  /**
-   * Persist the current index/store to disk.
-   * Useful for reloading state across process restarts.
-   */
-  abstract saveSnapshot(path: string): Promise<void>;
+  async addDocument(input: TDocumentInput): Promise<string> {
+    if (!input.embedding) {
+      throw new Error(
+        "ChromaVectorStore requires a pre-computed embedding on each document.",
+      );
+    }
+    return this.add({
+      text: input.pageContent,
+      embedding: input.embedding,
+      metadata: input.metadata,
+    });
+  }
 
-  /**
-   * Load a previously saved snapshot from disk.
-   * Should replace the current in-memory state entirely.
-   */
-  abstract loadSnapshot(path: string): Promise<void>;
+  async addDocuments(inputs: TDocumentInput[]): Promise<string[]> {
+    if (inputs.some((d) => !d.embedding)) {
+      throw new Error(
+        "ChromaVectorStore requires pre-computed embeddings on all documents.",
+      );
+    }
+
+    const ids = inputs.map(() => crypto.randomUUID());
+    await this.col.add({
+      ids,
+      embeddings: inputs.map((d) => d.embedding!),
+      documents: inputs.map((d) => d.pageContent),
+      metadatas: inputs.map((d) => this.serializeMetadata(d.metadata)),
+    });
+    return ids;
+  }
+
+  async upsert(id: string, input: TAddInput): Promise<void> {
+    await this.col.upsert({
+      ids: [id],
+      embeddings: [input.embedding],
+      documents: [input.text],
+      metadatas: [this.serializeMetadata(input.metadata)],
+    });
+  }
+
+  async getById(id: string): Promise<TMemoryEntry | null> {
+    const result = await this.col.get({
+      ids: [id],
+      include: [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings],
+    });
+
+    if (!result.ids.length) return null;
+
+    const { metadata, timestamp } = this.deserializeMetadata(
+      result.metadatas?.[0] as Record<string, string | number | boolean> | null,
+    );
+
+    return this.buildEntry(
+      result.ids[0],
+      result.documents?.[0] ?? "",
+      (result.embeddings?.[0] as number[]) ?? [],
+      metadata,
+      timestamp,
+    );
+  }
+
+  async list(options?: TListOptions): Promise<TMemoryEntry[]> {
+    const result = await this.col.get({
+      limit: options?.limit,
+      offset: options?.offset,
+      where: options?.filter,
+      include: [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings],
+    });
+
+    return result.ids.map((id, i) => {
+      const { metadata, timestamp } = this.deserializeMetadata(
+        result.metadatas?.[i] as Record<string, string | number | boolean> | null,
+      );
+      return this.buildEntry(
+        id,
+        result.documents?.[i] ?? "",
+        (result.embeddings?.[i] as number[]) ?? [],
+        metadata,
+        timestamp,
+      );
+    });
+  }
+
+  async search(
+    queryEmbedding: number[],
+    options?: TSearchOptions,
+  ): Promise<TSearchResult[]> {
+    const topK = options?.topK ?? 10;
+    const threshold = options?.threshold ?? 0;
+
+    const includeFields: IncludeEnum[] = [
+      IncludeEnum.documents,
+      IncludeEnum.metadatas,
+      IncludeEnum.distances,
+    ];
+    if (options?.includeEmbeddings) {
+      includeFields.push(IncludeEnum.embeddings);
+    }
+
+    const result = await this.col.query({
+      queryEmbeddings: [queryEmbedding],
+      nResults: topK,
+      where: options?.filter,
+      include: includeFields,
+    });
+
+    const ids = result.ids[0] ?? [];
+    const documents = result.documents[0] ?? [];
+    const metadatas = result.metadatas[0] ?? [];
+    const distances = result.distances?.[0] ?? [];
+    const embeddings = result.embeddings?.[0] ?? [];
+
+    const results: TSearchResult[] = [];
+
+    for (let i = 0; i < ids.length; i++) {
+      const score = distanceToScore(distances[i] ?? 0, this.distanceMetric);
+      if (score < threshold) continue;
+
+      const { metadata, timestamp } = this.deserializeMetadata(
+        metadatas[i] as Record<string, string | number | boolean> | null,
+      );
+
+      results.push({
+        score,
+        entry: this.buildEntry(
+          ids[i],
+          documents[i] ?? "",
+          (embeddings[i] as number[]) ?? [],
+          metadata,
+          timestamp,
+        ),
+      });
+    }
+
+    return results;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Delete operations
+  // ---------------------------------------------------------------------------
+
+  async deleteByIds(ids: string[]): Promise<void> {
+    await this.col.delete({ ids });
+  }
+
+  async deleteByFilter(filter: Record<string, any>): Promise<void> {
+    await this.col.delete({ where: filter });
+  }
+
+  async count(): Promise<number> {
+    return this.col.count();
+  }
+
+  async getStats(): Promise<TCollectionStats> {
+    const count = await this.col.count();
+    const meta = this.col.metadata as Record<string, any> | undefined;
+
+    return {
+      documentCount: count,
+      distanceMetric: this.distanceMetric,
+      collectionName: this.collectionName,
+      chromaMetadata: meta ?? {},
+    };
+  }
+
+  async reset(): Promise<void> {
+    await this.client.deleteCollection({ name: this.collectionName });
+    await this.initialize();
+  }
 }
