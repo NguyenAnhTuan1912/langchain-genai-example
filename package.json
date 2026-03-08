@@ -6,7 +6,8 @@
     "start": "npx ts-node main.ts",
     "build": "node scripts/build.js",
     "start:js": "node build/main.js",
-    "start:mcp": "npx ts-node mcp/index.ts http"
+    "start:mcp": "npx ts-node mcp/index.ts http",
+    "start:chroma": "npx chroma run"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1000.0",

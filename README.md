@@ -1,15 +1,8 @@
 # 🧠 LangChain Bedrock Chatbot with Long-term Memory
 
-Interactive terminal chatbot sử dụng **AWS Bedrock** làm LLM backend, tích hợp **vector-based long-term memory** để bot có thể nhớ thông tin xuyên suốt các phiên hội thoại.
+Trong repo này thì mình sẽ thực hiện việc thực hành làm GenAI Application với Langchain và AWS Bedrock.
 
-## Note
-
-Hiện tại đang có 2 tools:
-- Lấy ngày giờ hiện tại.
-- Lấy giá vàng.
-- Tính biểu thức (gọi qua MCP Server).
-
-## Ví dụ mẫu
+## Demo (image)
 
 1. Hỏi thử về tên của mình (Cái này là test Long Term Memory, Short Term Memory là Chat History).
 
@@ -31,21 +24,73 @@ Sau đó thì tạo một session mới và hỏi lại giống câu ban đầu.
 
 ![tính biểu thức với MCP](./images/image-4.png)
 
-## Tổng quan
+## Overview
 
 Project là một terminal chatbot với kiến trúc modular:
 
 | Module | Vai trò |
 |--------|---------|
-| `main.ts` | Entry point — interactive terminal loop, xử lý commands |
-| `chatbot.ts` | Khởi tạo LLM, prompt template, chain (RunnableSequence) |
-| `config.ts` | Config toàn cục: region, model IDs, thresholds |
-| `embedding.ts` | Gọi Cohere Embed v3 qua BedrockRuntimeClient |
-| `memory.ts` | Short-term memory (BufferMemory / BufferWindowMemory) |
-| `local-vector-store.ts` | Vector store cục bộ: cosine search, persist JSON |
-| `functions.ts` | Các chức năng chính: chat, showMemories, searchMemories |
+| `main.ts` | Entry point — interactive terminal loop, xử lý commands, thao tác với GenAI |
+| `mcp` | MCP Server mẫu để làm ví dụ, hiện tại có duy nhất một function là `calculator` |
+| `src/chatbot` | Khởi tạo LLM, prompt template, chain (RunnableSequence) để có thể cấu hình được một Chatbot hoàn chỉnh |
+| `src/config.ts` | Config toàn cục: region, model IDs, thresholds |
+| `src/embedding` | Lớp khởi tạo Embedding Agent, dùng để tạo vector cho user input, ai response, ... |
+| `src/memory` | Short-term memory (BufferMemory / BufferWindowMemory) và Long Term Memory (local vector store) |
+| `src/vector-store` | Lớp vector store chuẩn, dùng để chuẩn hóa nhiều vector store client khác nhau, hoạt động giống Adapter |
+| `src/tools` | Nơi định nghĩa các skills/tools chung cho chatbot |
+| `src/mcp-client` | Lớp mcp client chuẩn, dùng dể chuẩn hoá các mcp client, hoạt động giống Adapter |
 
-### Cách Long-term Memory hoạt động
+Cấu trúc chuẩn của project.
+
+```
+.
+├── main.ts
+├── mcp
+│   ├── index.ts
+│   └── mcp-server.ts
+├── package.json
+├── scripts
+│   └── build.js
+├── src
+│   ├── chatbot
+│   │   ├── Chatbot.ts
+│   │   ├── chat.ts
+│   │   ├── get-long-memory-text.ts
+│   │   ├── handle-inference.ts
+│   │   ├── handle-tool-use.ts
+│   │   ├── index.ts
+│   │   ├── llm.ts
+│   │   ├── search-memories.ts
+│   │   └── show-memory.ts
+│   ├── config.ts
+│   ├── embedding
+│   │   ├── BedrockEmbeddingAgent.ts
+│   │   ├── EmbeddingAgent.ts
+│   │   └── index.ts
+│   ├── helpers
+│   │   └── schema
+│   │       └── json-schema-to-zod.ts
+│   ├── mcp-client
+│   │   ├── MCPClient.ts
+│   │   └── index.ts
+│   ├── memory
+│   │   ├── LTM.ts
+│   │   ├── index.ts
+│   │   ├── local-ltm.ts
+│   │   └── stm.ts
+│   ├── tools
+│   │   ├── example-api-call-tool.ts
+│   │   ├── example-tool.ts
+│   │   └── index.ts
+│   └── vector-store
+│       ├── VectorStore.ts
+│       ├── chromadb.ts
+│       ├── index.ts
+│       └── local-vector-store.ts
+└── tsconfig.json
+```
+
+### How does long-term memory work?
 
 ```
 User input
@@ -71,9 +116,11 @@ Bot có **hai tầng memory** chạy song song:
 - **Short-term**: 3 cặp Q&A gần nhất trong session → giúp bot hiểu ngữ cảnh cuộc trò chuyện đang diễn ra
 - **Long-term**: toàn bộ history được embed + lưu vào vector store → bot nhớ thông tin từ các session trước, recall theo semantic similarity
 
+> Note: LTM chỉ là giả phảp tạm thời, về sau sẽ thay đổi cách lưu và xử lý memory cho loại này.
+
 ---
 
-## Công nghệ sử dụng
+## Techstack
 
 ### Core
 
@@ -85,27 +132,18 @@ Bot có **hai tầng memory** chạy song song:
 - **Anthropic Claude 3.5 Sonnet v2** (`anthropic.claude-3-5-sonnet-20241022-v2:0`) — LLM chính để sinh response
 - **Cohere Embed Multilingual v3** (`cohere.embed-multilingual-v3`) — Embedding model, hỗ trợ tốt tiếng Việt
 - **AWS SDK for JS v3** (`@aws-sdk/client-bedrock-runtime`) — Gọi trực tiếp Bedrock API cho embedding (bypass LangChain wrapper để tránh lỗi format)
+- **Chroma** - dùng để làm Vector Store (hiện tại chưa dùng).
 
 ### Vector Store
 
-- **Local Vector Store** tự implement — cosine similarity search, persist ra JSON file
+- **Local Vector Store** tự implement — cosine similarity search, persist ra JSON file hoặc là dùng Chroma để lưu trong Relational Database.
 - Production-ready alternatives: OpenSearch Serverless, PostgreSQL + pgvector, Pinecone
-
-### Thư viện chính
-
-| Package | Vai trò |
-|---------|---------|
-| `@langchain/aws` | LangChain integration cho Bedrock (ChatBedrockConverse) |
-| `@langchain/core` | Prompt templates, runnables, message types |
-| `langchain` | Memory classes (BufferMemory, BufferWindowMemory) |
-| `@aws-sdk/client-bedrock-runtime` | Gọi trực tiếp Bedrock cho Cohere Embed v3 |
-| `ts-node` | Chạy TypeScript trực tiếp không cần build |
 
 ---
 
-## Hướng dẫn Setup
+## Setup
 
-### 1. Yêu cầu hệ thống
+### 1. System Requirements
 
 - **Node.js** >= 18
 - **AWS Account** với Bedrock model access đã được enable
@@ -118,11 +156,11 @@ Truy cập [AWS Bedrock Console](https://console.aws.amazon.com/bedrock/) → **
 - `Anthropic Claude 3.5 Sonnet v2`
 - `Cohere Embed Multilingual v3`
 
-> ⚠️ Cần enable ở đúng region mà bạn sẽ sử dụng (mặc định: `us-east-1`)
+> ⚠️ Cần enable ở đúng region mà bạn sẽ sử dụng (mặc định: `ap-southeast-1`)
 
-### 3. Cấu hình AWS Credentials
+### 3. Configure AWS Credentials
 
-Tạo thêm file `.env` và thêm nội dung sau vào file. Trước khi sử dụng thì nhớ tạo profile cho credentials.
+Tạo thêm file `.env` và thêm các biến sau vào trong file. Trước khi sử dụng thì nhớ tạo profile cho credentials.
 
 ```bash
 AWS_REGION=ap-southeast-1
@@ -131,7 +169,9 @@ BEDROCK_EMBEDDING_MODEL_ID=cohere.embed-multilingual-v3
 AWS_PROFILE=
 ```
 
-### 4. Cài đặt dependencies
+> Note: có thể clone từ .env.example
+
+### 4. Install dependencies
 
 ```bash
 git clone <repo-url>
@@ -143,9 +183,17 @@ pnpm install
 
 ---
 
-## Hướng dẫn sử dụng
+## Usage
 
-### Chạy chatbot
+### 0. Run MCP Server (Optional)
+
+Dùng lệnh sau:
+
+```bash
+npm start:mcp
+```
+
+### 1. Run chatbot (in terminal)
 
 Đơn giản chỉ cần dùng lệnh:
 
@@ -155,9 +203,9 @@ npm start
 npx ts-node main.ts
 ```
 
-### Chat
+### 2. Chat
 
-Gõ tin nhắn và Enter. Bot trả lời bằng streaming (hiển thị từng chữ):
+Gõ tin nhắn và Enter. Bot trả lời bằng streaming (hiển thị từng chữ), dưới đây là ví dụ:
 
 ```
 👤 You: Mình tên là Tuan, đang làm về GenAI trên AWS
@@ -175,6 +223,8 @@ Gõ tin nhắn và Enter. Bot trả lời bằng streaming (hiển thị từng 
 
 ### Commands
 
+Có thể dùng một số command sau ở trong phiên chat với bot.
+
 | Command | Mô tả |
 |---------|-------|
 | `/memory` | Xem tất cả memories đã lưu (10 gần nhất) |
@@ -182,7 +232,7 @@ Gõ tin nhắn và Enter. Bot trả lời bằng streaming (hiển thị từng 
 | `/clear` | Xóa toàn bộ memories (cả short-term và long-term) |
 | `/exit` | Thoát chương trình |
 
-### Ví dụ debug memory
+### Debug memory exmple
 
 ```bash
 👤 You: /memory
@@ -201,23 +251,7 @@ Gõ tin nhắn và Enter. Bot trả lời bằng streaming (hiển thị từng 
       User: Mình đang build chatbot mẫu để học Assistant: Hay quá!...
 ```
 
-### Cấu trúc file
-
-```
-.
-├── README.md
-├── chatbot.ts              # Các object cần thiết để dùng cho chatbot
-├── config.ts               # Các config toàn cục
-├── embedding.ts            # Lớp Embedding Agent
-├── functions.ts            # Các chức năng
-├── local-vector-store.ts   # Lớp Vector Store cục bộ
-├── main.ts                 # Hàm chính dùng để chạy
-├── memory.ts               # Khởi tạo memory (short-term memory)
-├── package.json
-└── tsconfig.json
-```
-
-### Lưu ý
+### Note
 
 - File `memory-store.json` được tạo tự động khi chat lần đầu. Đây là nơi lưu toàn bộ embeddings + text. Restart app vẫn giữ nguyên memory.
 - Cohere Embed Multilingual v3 hỗ trợ tốt tiếng Việt, nên semantic search hoạt động với cả câu hỏi tiếng Việt.
